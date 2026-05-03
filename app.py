@@ -1,7 +1,7 @@
 import streamlit as st
 import cv2
 import mediapipe as mp
-import mediapipe.python.solutions.pose as mp_pose_module
+import mediapipe.python.solutions.pose as mp_pose_module  # Ép tải trực tiếp lõi Pose
 import numpy as np
 import pickle
 import tempfile
@@ -14,7 +14,7 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration, Vide
 # ==========================================
 st.set_page_config(page_title="AI Bench Press Coach", page_icon="🏋️‍♂️", layout="wide")
 
-# Cấu hình STUN Server để WebRTC có thể chạy mượt trên mạng 4G/Wifi điện thoại
+# Cấu hình STUN Server để WebRTC có thể chạy mượt trên mạng điện thoại
 RTC_CONFIGURATION = RTCConfiguration(
     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 )
@@ -36,11 +36,9 @@ def calculate_distance(a, b):
 # ==========================================
 class BenchPressCoach:
     def __init__(self):
-        # Dùng trực tiếp module đã import thay vì gọi gián tiếp qua mp.solutions
         self.mp_pose = mp_pose_module 
         self.pose = self.mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
         
-        # Load mô hình (nếu cần dùng cho các tính năng tương lai, hiện tại dùng luật cứng <=75 độ)
         if os.path.exists("model_angles_v2.pkl"):
             with open("model_angles_v2.pkl", "rb") as f:
                 self.model = pickle.load(f)
@@ -57,40 +55,37 @@ class BenchPressCoach:
         results = self.pose.process(rgb_frame) 
         
         status_text = "DANG CHO NGUOI TAP..."
-        color = (200, 200, 200) # Xám
-        angle_l = angle_r = avg_ratio = 0
+        color = (200, 200, 200) 
+        angle_l = angle_r = arm_bend_l = arm_bend_r = 0
         state_info = "Chua xac dinh"
 
-        if results.pose_landmarks:
-            lm = results.pose_landmarks.landmark 
+        # Đã thêm # type: ignore để Pylance ngừng báo lỗi ảo
+        if getattr(results, 'pose_landmarks', None): 
+            lm = results.pose_landmarks.landmark # type: ignore
             
-            # ĐO GÓC NÁCH
+            # 1. ĐO GÓC NÁCH
             angle_l = calculate_angle([lm[23].x, lm[23].y], [lm[11].x, lm[11].y], [lm[13].x, lm[13].y])
             angle_r = calculate_angle([lm[24].x, lm[24].y], [lm[12].x, lm[12].y], [lm[14].x, lm[14].y])
             
-            # ĐO KHOẢNG CÁCH EUCLID ĐỂ TÌM PHA UP/DOWN
-            dist_wrist_l = calculate_distance([lm[11].x, lm[11].y], [lm[15].x, lm[15].y])
-            dist_wrist_r = calculate_distance([lm[12].x, lm[12].y], [lm[16].x, lm[16].y])
-            torso_l = calculate_distance([lm[11].x, lm[11].y], [lm[23].x, lm[23].y]) + 1e-6
-            torso_r = calculate_distance([lm[12].x, lm[12].y], [lm[24].x, lm[24].y]) + 1e-6
+            # 2. ĐO GÓC KHUỶU TAY 
+            arm_bend_l = calculate_angle([lm[11].x, lm[11].y], [lm[13].x, lm[13].y], [lm[15].x, lm[15].y])
+            arm_bend_r = calculate_angle([lm[12].x, lm[12].y], [lm[14].x, lm[14].y], [lm[16].x, lm[16].y])
             
-            avg_ratio = ((dist_wrist_l / torso_l) + (dist_wrist_r / torso_r)) / 2.0
-            
-            # MÁY TRẠNG THÁI
-            is_up = avg_ratio < 0.40 # Cổ tay sát vai
+            # 3. MÁY TRẠNG THÁI REAL-TIME
+            is_up = (arm_bend_l > 140) and (arm_bend_r > 140)
             
             if is_up:
                 state_info = "Pha day len (Up)"
                 status_text = "KHONG XAC DINH"
-                color = (150, 150, 150) # Xám
+                color = (150, 150, 150) 
             else:
                 state_info = "Pha ha ta (Down)"
                 if angle_l <= 75 and angle_r <= 75: 
                     status_text = "FORM CHUAN"
-                    color = (0, 255, 0) # Xanh
+                    color = (0, 255, 0) 
                 else:
                     status_text = "FORM SAI"
-                    color = (0, 0, 255) # Đỏ
+                    color = (0, 0, 255) 
 
             # VẼ KHUNG XƯƠNG
             for p1, p2 in self.connections:
@@ -109,24 +104,23 @@ class BenchPressCoach:
         box_y1 = orig_h 
         
         cv2.putText(frame, f"Trang thai : {state_info}", (15, box_y1 + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
-        cv2.putText(frame, f"Goc Nach   : Trai {int(angle_l):03d} do | Phai {int(angle_r):03d} do", (15, box_y1 + 75), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
-        cv2.putText(frame, f"Ty le Co Tay: {avg_ratio:.2f} (Nguong UP < 0.40)", (15, box_y1 + 115), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        cv2.putText(frame, f"Goc Nach   : Trai {int(angle_l):03d} | Phai {int(angle_r):03d} (Do)", (15, box_y1 + 75), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        cv2.putText(frame, f"Goc Khuyu  : Trai {int(arm_bend_l):03d} | Phai {int(arm_bend_r):03d} (Do)", (15, box_y1 + 115), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
         cv2.putText(frame, status_text, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 3)
         
         return frame
 
-# Khởi tạo Coach toàn cục để WebRTC sử dụng
 coach = BenchPressCoach()
 
 # ==========================================
-# 3. LỚP XỬ LÝ WEBRTC (CAMERA ĐIỆN THOẠI)
+# 3. LỚP XỬ LÝ WEBRTC
 # ==========================================
 class PoseProcessor(VideoProcessorBase):
-    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+    # Đã thêm tham chiếu chuỗi "av.VideoFrame" và type: ignore để trị lỗi PyAV
+    def recv(self, frame: "av.VideoFrame") -> "av.VideoFrame": # type: ignore
         img = frame.to_ndarray(format="bgr24")
-        # Xử lý qua AI Lõi
         img_processed = coach.process_frame(img)
-        return av.VideoFrame.from_ndarray(img_processed, format="bgr24")
+        return av.VideoFrame.from_ndarray(img_processed, format="bgr24") # type: ignore
 
 # ==========================================
 # 4. GIAO DIỆN NGƯỜI DÙNG STREAMLIT
@@ -134,7 +128,6 @@ class PoseProcessor(VideoProcessorBase):
 def main():
     st.sidebar.title("🏋️‍♂️ Bảng Điều Khiển")
     
-    # Taskbar điều hướng
     app_mode = st.sidebar.radio(
         "Chọn chức năng:",
         ["📖 Hướng dẫn sử dụng", "📱 Camera Trực tiếp (Điện thoại)", "🎞️ Upload Video Đánh giá"]
@@ -142,7 +135,9 @@ def main():
 
     if app_mode == "📖 Hướng dẫn sử dụng":
         st.title("🏋️‍♂️ Phần Mềm AI Coach - Đánh Giá Tư Thế Bench Press")
-        st.markdown("""
+        
+        # Thêm chữ 'r' vào trước ngoặc kép để triệt tiêu lỗi Escape Sequence của Pylance
+        st.markdown(r"""
         ### Chào mừng bạn đến với hệ thống AI Coach!
         Hệ thống sử dụng Trí tuệ nhân tạo (Computer Vision) để tự động phân tích và sửa lỗi tư thế đẩy ngực của bạn.
         
@@ -162,14 +157,13 @@ def main():
         st.title("📱 Phân Tích Bằng Camera Điện Thoại")
         st.warning("Vui lòng cấp quyền truy cập Camera cho trình duyệt. Nhấn 'START' để bắt đầu.")
         
-        # Streamlit-webrtc xử lý camera trực tiếp trên trình duyệt
         webrtc_streamer(
             key="bench-press-camera",
             mode=WebRtcMode.SENDRECV,
             rtc_configuration=RTC_CONFIGURATION,
             video_processor_factory=PoseProcessor,
             media_stream_constraints={
-                "video": {"facingMode": "environment"}, # Ưu tiên mở camera sau của điện thoại
+                "video": {"facingMode": "environment"}, 
                 "audio": False
             },
             async_processing=True
@@ -194,16 +188,12 @@ def main():
                         st.info("✅ Đã phân tích xong toàn bộ video!")
                         break
                     
-                    # Resize để đảm bảo tốc độ và giao diện
                     h_orig, w_orig = frame.shape[:2]
                     target_height = 600
                     target_width = int(w_orig * (target_height / h_orig))
                     frame = cv2.resize(frame, (target_width, target_height))
                     
-                    # Đẩy frame vào Core xử lý
                     processed_frame = coach.process_frame(frame)
-                    
-                    # Streamlit yêu cầu hệ màu RGB
                     processed_frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
                     st_video.image(processed_frame_rgb, channels="RGB")
                     
