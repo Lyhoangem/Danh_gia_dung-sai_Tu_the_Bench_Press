@@ -5,3 +5,5 @@ mediapipe
 numpy
 av
 scikit-learn
+tornado
+aiortc
