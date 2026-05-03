@@ -13,7 +13,6 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration, Vide
 # ==========================================
 st.set_page_config(page_title="AI Bench Press Coach", page_icon="🏋️‍♂️", layout="wide")
 
-# Cấu hình STUN Server để WebRTC có thể chạy mượt trên mạng điện thoại
 RTC_CONFIGURATION = RTCConfiguration(
     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 )
