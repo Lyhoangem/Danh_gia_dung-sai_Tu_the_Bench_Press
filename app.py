@@ -1,6 +1,7 @@
 import streamlit as st
 import cv2
 import mediapipe as mp
+import mediapipe.python.solutions.pose as mp_pose_module
 import numpy as np
 import pickle
 import tempfile
@@ -35,7 +36,8 @@ def calculate_distance(a, b):
 # ==========================================
 class BenchPressCoach:
     def __init__(self):
-        self.mp_pose = mp.solutions.pose #type: ignore
+        # Dùng trực tiếp module đã import thay vì gọi gián tiếp qua mp.solutions
+        self.mp_pose = mp_pose_module 
         self.pose = self.mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
         
         # Load mô hình (nếu cần dùng cho các tính năng tương lai, hiện tại dùng luật cứng <=75 độ)
